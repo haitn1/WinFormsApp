@@ -1,0 +1,137 @@
+name: LiDAR3DScanner .NET CI
+
+on:
+  pull_request:
+    branches:
+      - main
+      - develop
+    types:
+      - closed
+jobs:
+  build-test:
+   
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true
+    runs-on: windows-latest
+    
+    env: 
+      PR_TITLE: ${{ github.event.pull_request.title || 'Manual Trigger Testing' }}
+      REPO_NAME: ${{ github.repository }}
+      WORKFLOW_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+    steps:
+      # 1. Checkout
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+     # 2. Setup Tools cho .NET Framework 4.8
+      - name: Setup NuGet
+        uses: NuGet/setup-nuget@v3
+        
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      # (keep .NET SDK 8.0 to setup ReportGenerator Global Tool)
+      - name: Setup .NET for Global Tools
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      # Install ReportGenerator
+      - name: Install ReportGenerator
+        run: dotnet tool install --global dotnet-reportgenerator-globaltool
+
+      # Add tool path
+      - name: Add .NET tools to PATH
+        run: echo "$env:USERPROFILE\.dotnet\tools" >> $env:GITHUB_PATH
+        shell: pwsh
+
+      # 3. Restore
+      - name: Restore packages
+        run: nuget restore ./LiDAR3DScanner.sln
+
+      # Setup Japanese locale
+      - name: Setup Japanese Locale
+        run: | 
+            set LANG=ja_JP.SJIS
+            chcp 932
+        shell: cmd
+
+      # 4. Build solution by MSBuild to x86
+      - name: Build solution
+        run: msbuild ./WinFormsApp/WinFormsApp.csproj /p:Configuration=Release /p:Platform=x86 /p:OutputPath=publish
+    
+            
+      # 5. Run coverage script
+      - name: Run Coverage Report Script
+        run: .\run-coverage-report.bat
+        shell: cmd
+
+      # 6. Zip EXE
+      - name: Zip WinForms App
+        run: |
+          Compress-Archive `
+          -Path ./WinFormsApp/publish/* `
+          -DestinationPath WinFormsApp.zip
+        shell: pwsh
+
+      # Zip Coverage Report
+      - name: Zip Coverage Report
+        run: |
+          Compress-Archive `
+          -Path UnitTests\coverage-report/* `
+          -DestinationPath coverage-report.zip
+        shell: pwsh
+
+     # 7. Upload Artifacts
+      - name: Upload WinForms App
+        uses: actions/upload-artifact@v4
+        with:
+          name: WinFormsApp
+          path: WinFormsApp.zip
+
+      # Upload coverage zip
+      - name: Upload Coverage Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage-report.zip
+
+      # Upload trx
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: |
+            **/*.trx
+
+      # --- Send Notification to Google Chat ---
+      - name: Send Notification to Google Chat
+        if: always()       
+        shell: bash
+        run: |
+          PAYLOAD=$(jq -n -c \
+          --arg repo "$REPO_NAME" \
+          --arg title "$PR_TITLE" \
+          --arg url "$WORKFLOW_URL" \
+          '{
+            "cardsV2": [{
+              "cardId": "prNotificationCard",
+              "card": {
+                "header": {
+                  "title": "Build & Artifacts Ready",
+                  "subtitle": $repo,
+                  "imageType": "CIRCLE",
+                  "imageUrl": "https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png"
+                },
+                "sections": [{
+                  "widgets": [
+                    { "textParagraph": { "text": ("<b>Merged PR:</b> " + $title + "<br>The workflow run has finished. Artifacts (<b>WinFormsApp.zip</b> and <b>coverage-report.zip</b>) have been uploaded successfully.") } },
+                    { "buttonList": { "buttons": [{ "text": "Download Artifacts (GitHub)", "onClick": { "openLink": { "url": $url } } }] } }
+                  ]
+                }]
+              }
+            }]
+          }')
+          
+          curl -X POST -H 'Content-Type: application/json' -d "$PAYLOAD" "${{ secrets.GOOGLE_CHAT_WEBHOOK }}"
