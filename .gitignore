@@ -1,0 +1,17 @@
+LiDAR3DScanner/.vs/
+WinAppDriverTests/.vs/
+WinAppDriverTests/bin/
+WinAppDriverTests/obj/
+WinFormsApp/obj/
+WinFormsApp/bin/
+LiDAR3DScanner/LiDAR3DScanner/obj/
+LiDAR3DScanner/LiDAR3DScanner/bin/
+UnitTests/bin/
+UnitTests/obj
+*.DS_Store
+.vs/
+WinApp.Common/obj/
+WinApp.Common/bin/
+UnitTests/coverage-report/
+TestResults/
+FilteredTestResults/
