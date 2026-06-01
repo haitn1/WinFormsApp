@@ -5,13 +5,18 @@ on:
     branches:
       - main
       - develop
-    types:
-      - closed
+permissions:
+  contents: read
+
+concurrency:
+  group: dskview-ci-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
 jobs:
   build-test:
-   
-    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true
+    name: Build, Test, Package
     runs-on: windows-latest
+    timeout-minutes: 30
     
     env: 
       PR_TITLE: ${{ github.event.pull_request.title || 'Manual Trigger Testing' }}
