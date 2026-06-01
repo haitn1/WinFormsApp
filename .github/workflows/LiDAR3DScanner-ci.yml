@@ -101,23 +101,47 @@ jobs:
         with:
           name: WinFormsApp
           path: WinFormsApp.zip
-      # UPLOAD TO GOOGLE DRIVE
-      - name: Upload to Google Drive
-        uses: adityak74/google-drive-upload-git-action@main
-        with:
-          credentials: ${{ secrets.GDRIVE_CREDENTIALS_DATA }}
-          filename: "WinFormsApp.zip"
-          folderId: ${{ secrets.GDRIVE_FOLDER_ID }}
-          name: "WinFormsApp_${{ github.run_id }}.zip" 
-          overwrite: "true"
+      
       # Upload coverage zip
       - name: Upload Coverage Report
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
           path: coverage-report.zip
+  # ==========================================
+  # JOB 2: CHẠY TRÊN LINUX (THÊM MỚI)
+  # ==========================================
+  upload-drive:
+    name: Upload to Drive & Notify
+    needs: build-test # Yêu cầu: Bắt buộc phải đợi Job build-test chạy xong và thành công
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    
+    steps:
+      # 1. Tải file App Zip từ Job Windows xuống máy Linux
+      - name: Download App Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: DSKView
 
-      # --- UPLOAD COVERAGE TO GOOGLE DRIVE ---
+      # 2. Tải file Coverage Zip từ Job Windows xuống (nếu có)
+      - name: Download Coverage Artifact
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: coverage-report
+
+      # 3. Đẩy App lên Google Drive (Docker Action chạy trên Linux)
+      - name: Upload App to Google Drive
+        uses: adityak74/google-drive-upload-git-action@main
+        with:
+          credentials: ${{ secrets.GDRIVE_CREDENTIALS_DATA }}
+          filename: "DSKView.zip"
+          folderId: ${{ secrets.GDRIVE_FOLDER_ID }}
+          name: "DSKView_${{ github.run_id }}.zip" 
+          overwrite: "true"
+
+      # 4. Đẩy Coverage lên Google Drive
       - name: Upload Coverage to Google Drive
         uses: adityak74/google-drive-upload-git-action@main
         continue-on-error: true
@@ -127,19 +151,18 @@ jobs:
           folderId: ${{ secrets.GDRIVE_FOLDER_ID }}
           name: "coverage-report_${{ github.run_id }}.zip" 
           overwrite: "true"
-      # Upload trx
-      - name: Upload test results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-results
-          path: |
-            **/*.trx
 
-      # --- Send Notification to Google Chat ---
-      - name: Send Notification to Google Chat
-        if: always()       
-        shell: bash
+      # 5. Gửi thông báo Google Chat (PowerShell chạy tốt trên Ubuntu)
+      - name: Send Google Chat notification
+        shell: pwsh
+        env:
+          GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
+          GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
+          PR_TITLE: ${{ github.event.pull_request.title || 'Manual Trigger Testing' }}
+          PR_URL: ${{ github.event.pull_request.html_url || github.server_url }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          REPO_NAME: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
         run: |
           if ([string]::IsNullOrWhiteSpace($env:GOOGLE_CHAT_WEBHOOK)) {
             Write-Host "GOOGLE_CHAT_WEBHOOK is not configured. Skipping notification."
@@ -147,8 +170,6 @@ jobs:
           }
 
           $safeTitle = [System.Net.WebUtility]::HtmlEncode($env:PR_TITLE)
-          
-          # Tạo đường dẫn trỏ thẳng vào thư mục Google Drive
           $driveUrl = "https://drive.google.com/drive/folders/$($env:GDRIVE_FOLDER_ID)"
 
           $payload = @{
@@ -165,7 +186,6 @@ jobs:
                       widgets = @(
                         @{
                           textParagraph = @{
-                            # Hiển thị thông tin PR và tên 2 file zip trên Drive
                             text = "<b>Merged PR:</b> $safeTitle<br><b>App Build:</b> DSKView_$($env:RUN_ID).zip<br><b>Coverage:</b> coverage-report_$($env:RUN_ID).zip"
                           }
                         }
@@ -173,20 +193,15 @@ jobs:
                           buttonList = @{
                             buttons = @(
                               @{
-                                # Nút mở thư mục Google Drive chứa file
                                 text = '📂 Open Google Drive'
                                 onClick = @{
-                                  openLink = @{
-                                    url = $driveUrl
-                                  }
+                                  openLink = @{ url = $driveUrl }
                                 }
                               }
                               @{
                                 text = '⚙️ Open workflow run'
                                 onClick = @{
-                                  openLink = @{
-                                    url = $env:RUN_URL
-                                  }
+                                  openLink = @{ url = $env:RUN_URL }
                                 }
                               }
                             )
@@ -199,5 +214,5 @@ jobs:
               }
             )
           } | ConvertTo-Json -Depth 20
-          
+
           Invoke-RestMethod -Uri $env:GOOGLE_CHAT_WEBHOOK -Method Post -ContentType 'application/json; charset=utf-8' -Body $payload
