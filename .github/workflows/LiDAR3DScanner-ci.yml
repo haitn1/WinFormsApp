@@ -1,6 +1,9 @@
 name: LiDAR3DScanner .NET CI
 
 on:
+  push:
+    branches:
+      - feature/github_action_ci
   pull_request:
     branches:
       - main
@@ -10,7 +13,7 @@ on:
 jobs:
   build-test:
    
-    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true
+    #if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true
     runs-on: windows-latest
     
     env: 
