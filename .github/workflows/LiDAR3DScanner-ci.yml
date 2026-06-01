@@ -1,9 +1,6 @@
-name: LiDAR3DScanner .NET CI
+﻿name: LiDAR3DScanner .NET CI
 
 on:
-  push:
-    branches:
-      - feature/github_action_ci
   pull_request:
     branches:
       - main
@@ -13,14 +10,22 @@ on:
 jobs:
   build-test:
    
-    #if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true
     runs-on: windows-latest
     
     env: 
       PR_TITLE: ${{ github.event.pull_request.title || 'Manual Trigger Testing' }}
       REPO_NAME: ${{ github.repository }}
       WORKFLOW_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-
+      GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
+          # Lấy ID thư mục Drive từ Secrets để tạo link
+      GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
+     
+      PR_URL: ${{ github.event.pull_request.html_url || github.server_url }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+     
+          # Truyền run_id vào script
+      RUN_ID: ${{ github.run_id }}
     steps:
       # 1. Checkout
       - name: Checkout source
@@ -91,7 +96,15 @@ jobs:
         with:
           name: WinFormsApp
           path: WinFormsApp.zip
-
+      # UPLOAD TO GOOGLE DRIVE
+      - name: Upload to Google Drive
+        uses: adityak74/google-drive-upload-action@main
+        with:
+          credentials: ${{ secrets.GDRIVE_CREDENTIALS_DATA }}
+          filename: "WinFormsApp.zip"
+          folderId: ${{ secrets.GDRIVE_FOLDER_ID }}
+          name: "WinFormsApp_${{ github.run_id }}.zip" 
+          overwrite: "true"
       # Upload coverage zip
       - name: Upload Coverage Report
         uses: actions/upload-artifact@v4
@@ -99,6 +112,17 @@ jobs:
           name: coverage-report
           path: coverage-report.zip
 
+      # --- UPLOAD COVERAGE TO GOOGLE DRIVE ---
+      - name: Upload Coverage to Google Drive
+        uses: adityak74/google-drive-upload-action@main
+       
+        continue-on-error: true
+        with:
+          credentials: ${{ secrets.GDRIVE_CREDENTIALS_DATA }}
+          filename: "coverage-report.zip"
+          folderId: ${{ secrets.GDRIVE_FOLDER_ID }}
+          name: "coverage-report_${{ github.run_id }}.zip" 
+          overwrite: "true"
       # Upload trx
       - name: Upload test results
         if: always()
@@ -113,28 +137,63 @@ jobs:
         if: always()       
         shell: bash
         run: |
-          PAYLOAD=$(jq -n -c \
-          --arg repo "$REPO_NAME" \
-          --arg title "$PR_TITLE" \
-          --arg url "$WORKFLOW_URL" \
-          '{
-            "cardsV2": [{
-              "cardId": "prNotificationCard",
-              "card": {
-                "header": {
-                  "title": "Build & Artifacts Ready",
-                  "subtitle": $repo,
-                  "imageType": "CIRCLE",
-                  "imageUrl": "https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png"
-                },
-                "sections": [{
-                  "widgets": [
-                    { "textParagraph": { "text": ("<b>Merged PR:</b> " + $title + "<br>The workflow run has finished. Artifacts (<b>WinFormsApp.zip</b> and <b>coverage-report.zip</b>) have been uploaded successfully.") } },
-                    { "buttonList": { "buttons": [{ "text": "Download Artifacts (GitHub)", "onClick": { "openLink": { "url": $url } } }] } }
-                  ]
-                }]
-              }
-            }]
-          }')
+          if ([string]::IsNullOrWhiteSpace($env:GOOGLE_CHAT_WEBHOOK)) {
+            Write-Host "GOOGLE_CHAT_WEBHOOK is not configured. Skipping notification."
+            exit 0
+          }
+
+          $safeTitle = [System.Net.WebUtility]::HtmlEncode($env:PR_TITLE)
           
-          curl -X POST -H 'Content-Type: application/json' -d "$PAYLOAD" "${{ secrets.GOOGLE_CHAT_WEBHOOK }}"
+          # Tạo đường dẫn trỏ thẳng vào thư mục Google Drive
+          $driveUrl = "https://drive.google.com/drive/folders/$($env:GDRIVE_FOLDER_ID)"
+
+          $payload = @{
+            cardsV2 = @(
+              @{
+                cardId = 'dskview-ci'
+                card = @{
+                  header = @{
+                    title = 'DSKView CI completed'
+                    subtitle = $env:REPO_NAME
+                  }
+                  sections = @(
+                    @{
+                      widgets = @(
+                        @{
+                          textParagraph = @{
+                            # Hiển thị thông tin PR và tên 2 file zip trên Drive
+                            text = "<b>Merged PR:</b> $safeTitle<br><b>App Build:</b> DSKView_$($env:RUN_ID).zip<br><b>Coverage:</b> coverage-report_$($env:RUN_ID).zip"
+                          }
+                        }
+                        @{
+                          buttonList = @{
+                            buttons = @(
+                              @{
+                                # Nút mở thư mục Google Drive chứa file
+                                text = '📂 Open Google Drive'
+                                onClick = @{
+                                  openLink = @{
+                                    url = $driveUrl
+                                  }
+                                }
+                              }
+                              @{
+                                text = '⚙️ Open workflow run'
+                                onClick = @{
+                                  openLink = @{
+                                    url = $env:RUN_URL
+                                  }
+                                }
+                              }
+                            )
+                          }
+                        }
+                      )
+                    }
+                  )
+                }
+              }
+            )
+          } | ConvertTo-Json -Depth 20
+          
+          Invoke-RestMethod -Uri $env:GOOGLE_CHAT_WEBHOOK -Method Post -ContentType 'application/json; charset=utf-8' -Body $payload
