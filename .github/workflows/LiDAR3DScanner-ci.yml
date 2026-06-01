@@ -103,7 +103,7 @@ jobs:
           path: WinFormsApp.zip
       # UPLOAD TO GOOGLE DRIVE
       - name: Upload to Google Drive
-        uses: adityak74/google-drive-upload-action@main
+        uses: adityak74/google-drive-upload-git-action@main
         with:
           credentials: ${{ secrets.GDRIVE_CREDENTIALS_DATA }}
           filename: "WinFormsApp.zip"
@@ -119,8 +119,7 @@ jobs:
 
       # --- UPLOAD COVERAGE TO GOOGLE DRIVE ---
       - name: Upload Coverage to Google Drive
-        uses: adityak74/google-drive-upload-action@main
-       
+        uses: adityak74/google-drive-upload-git-action@main
         continue-on-error: true
         with:
           credentials: ${{ secrets.GDRIVE_CREDENTIALS_DATA }}
