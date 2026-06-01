@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: dskview-ci-${{ github.event.pull_request.number || github.run_id }}
+  group: winformapp-ci-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
 
 jobs:
@@ -122,7 +122,7 @@ jobs:
       - name: Download App Artifact
         uses: actions/download-artifact@v4
         with:
-          name: DSKView
+          name: WinFormsApp
 
       # 2. Tải file Coverage Zip từ Job Windows xuống (nếu có)
       - name: Download Coverage Artifact
@@ -136,9 +136,9 @@ jobs:
         uses: adityak74/google-drive-upload-git-action@main
         with:
           credentials: ${{ secrets.GDRIVE_CREDENTIALS_DATA }}
-          filename: "DSKView.zip"
+          filename: "WinFormsApp.zip"
           folderId: ${{ secrets.GDRIVE_FOLDER_ID }}
-          name: "DSKView_${{ github.run_id }}.zip" 
+          name: "WinFormsApp_${{ github.run_id }}.zip" 
           overwrite: "true"
 
       # 4. Đẩy Coverage lên Google Drive
@@ -175,10 +175,10 @@ jobs:
           $payload = @{
             cardsV2 = @(
               @{
-                cardId = 'dskview-ci'
+                cardId = 'winformapp-ci'
                 card = @{
                   header = @{
-                    title = 'DSKView CI completed'
+                    title = 'winformapp CI completed'
                     subtitle = $env:REPO_NAME
                   }
                   sections = @(
@@ -186,7 +186,7 @@ jobs:
                       widgets = @(
                         @{
                           textParagraph = @{
-                            text = "<b>Merged PR:</b> $safeTitle<br><b>App Build:</b> DSKView_$($env:RUN_ID).zip<br><b>Coverage:</b> coverage-report_$($env:RUN_ID).zip"
+                            text = "<b>Merged PR:</b> $safeTitle<br><b>App Build:</b> winformapp_$($env:RUN_ID).zip<br><b>Coverage:</b> coverage-report_$($env:RUN_ID).zip"
                           }
                         }
                         @{
