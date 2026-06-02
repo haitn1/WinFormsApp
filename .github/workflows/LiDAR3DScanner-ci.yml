@@ -1,39 +1,49 @@
 name: LiDAR3DScanner .NET CI
 
 on:
-  push:
-    branches:
-      - feature/github_action_ci
+  workflow_dispatch:
   pull_request:
     branches:
       - main
       - develop
     types:
       - closed
+    paths-ignore:
+      - '**/*.md'
+      - '.gitignore'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: winformapp-ci-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
 jobs:
   build-test:
-   
-    #if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true
+    name: Build, Test, Package
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true
     runs-on: windows-latest
+    timeout-minutes: 30
     
     env: 
       PR_TITLE: ${{ github.event.pull_request.title || 'Manual Trigger Testing' }}
       REPO_NAME: ${{ github.repository }}
       WORKFLOW_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true   
     steps:
-      # 1. Checkout
+      # 1. Checkout source code
       - name: Checkout source
         uses: actions/checkout@v4
 
-     # 2. Setup Tools cho .NET Framework 4.8
+      # 2. Setup Tools for .NET Framework 4.8
       - name: Setup NuGet
         uses: NuGet/setup-nuget@v3
         
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v2
 
-      # (keep .NET SDK 8.0 to setup ReportGenerator Global Tool)
+      # Setup .NET SDK 8.0 to install ReportGenerator Global Tool
       - name: Setup .NET for Global Tools
         uses: actions/setup-dotnet@v4
         with:
@@ -43,16 +53,16 @@ jobs:
       - name: Install ReportGenerator
         run: dotnet tool install --global dotnet-reportgenerator-globaltool
 
-      # Add tool path
+      # Add .NET tools to PATH
       - name: Add .NET tools to PATH
-        run: echo "$env:USERPROFILE\.dotnet\tools" >> $env:GITHUB_PATH
+        run: echo "$env:USERPROFILE\.dotnet	ools" >> $env:GITHUB_PATH
         shell: pwsh
 
-      # 3. Restore
+      # 3. Restore NuGet packages
       - name: Restore packages
         run: nuget restore ./LiDAR3DScanner.sln
 
-      # Setup Japanese locale
+      # Setup Japanese locale for MSBuild
       - name: Setup Japanese Locale
         run: | 
             set LANG=ja_JP.SJIS
@@ -63,13 +73,12 @@ jobs:
       - name: Build solution
         run: msbuild ./WinFormsApp/WinFormsApp.csproj /p:Configuration=Release /p:Platform=x86 /p:OutputPath=publish
     
-            
       # 5. Run coverage script
       - name: Run Coverage Report Script
-        run: .\run-coverage-report.bat
+        run: ./run-coverage-report.bat
         shell: cmd
 
-      # 6. Zip EXE
+      # 6. Zip WinForms App
       - name: Zip WinForms App
         run: |
           Compress-Archive `
@@ -77,64 +86,178 @@ jobs:
           -DestinationPath WinFormsApp.zip
         shell: pwsh
 
-      # Zip Coverage Report
+      # Zip Coverage Report safely
       - name: Zip Coverage Report
         run: |
-          Compress-Archive `
-          -Path UnitTests\coverage-report/* `
-          -DestinationPath coverage-report.zip
+          if (Test-Path -Path "UnitTests\coverage-report") {
+            Compress-Archive -Path UnitTests\coverage-report\* -DestinationPath coverage-report.zip
+          } else {
+            Write-Host "Coverage report folder not found. Skipping zip."
+          }
         shell: pwsh
 
-     # 7. Upload Artifacts
+      # 7. Upload Artifacts
       - name: Upload WinForms App
         uses: actions/upload-artifact@v4
         with:
           name: WinFormsApp
           path: WinFormsApp.zip
-
-      # Upload coverage zip
+          retention-days: 1
+      
+      # Upload Coverage Report
       - name: Upload Coverage Report
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
           path: coverage-report.zip
+          if-no-files-found: ignore
+          retention-days: 1
 
-      # Upload trx
-      - name: Upload test results
-        if: always()
-        uses: actions/upload-artifact@v4
+  # ==========================================
+  # JOB 2: RUN ON LINUX 
+  # ==========================================
+  upload-drive:
+    name: Upload to Drive & Notify
+    needs: build-test 
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      
+    steps:
+      # 1. Download the App Zip file from the Windows Job to the Linux machine.
+      - name: Download App Artifact
+        uses: actions/download-artifact@v4
         with:
-          name: test-results
-          path: |
-            **/*.trx
+          name: WinFormsApp
 
-      # --- Send Notification to Google Chat ---
-      - name: Send Notification to Google Chat
-        if: always()       
-        shell: bash
+      # 2. Download the Coverage Zip file from the Windows Job (if available).
+      - name: Download Coverage Artifact
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: coverage-report
+
+      # --- 1. UPLOAD APP TO GOOGLE DRIVE VIA RCLONE (OAUTH) ---
+      - name: Upload App to Google Drive
+        env:
+          FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
+          RUN_ID: ${{ github.run_id }}
+          RCLONE_TOKEN: ${{ secrets.RCLONE_GDRIVE_TOKEN }}
         run: |
-          PAYLOAD=$(jq -n -c \
-          --arg repo "$REPO_NAME" \
-          --arg title "$PR_TITLE" \
-          --arg url "$WORKFLOW_URL" \
-          '{
-            "cardsV2": [{
-              "cardId": "prNotificationCard",
-              "card": {
-                "header": {
-                  "title": "Build & Artifacts Ready",
-                  "subtitle": $repo,
-                  "imageType": "CIRCLE",
-                  "imageUrl": "https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png"
-                },
-                "sections": [{
-                  "widgets": [
-                    { "textParagraph": { "text": ("<b>Merged PR:</b> " + $title + "<br>The workflow run has finished. Artifacts (<b>WinFormsApp.zip</b> and <b>coverage-report.zip</b>) have been uploaded successfully.") } },
-                    { "buttonList": { "buttons": [{ "text": "Download Artifacts (GitHub)", "onClick": { "openLink": { "url": $url } } }] } }
-                  ]
-                }]
-              }
-            }]
-          }')
+          # 1. Get current time (UTC) in yyyyMMdd_HHmm format
+          CURRENT_TIME=$(date -u +"%Y%m%d_%Hh%M")
+          NEW_APP_FILE="WinFormsApp_${RUN_ID}_${CURRENT_TIME}.zip"
           
-          curl -X POST -H 'Content-Type: application/json' -d "$PAYLOAD" "${{ secrets.GOOGLE_CHAT_WEBHOOK }}"
+          # 2. Save the filename to an environment variable for Google Chat to use later
+          echo "APP_FILENAME=$NEW_APP_FILE" >> $GITHUB_ENV
+          
+          # 3. Install Rclone automatically
+          curl -s https://rclone.org/install.sh | sudo bash
+          
+          # 4. Rename the zip file
+          mv WinFormsApp.zip "$NEW_APP_FILE"
+          
+          # 5. Configure Rclone using OAuth Token
+          mkdir -p ~/.config/rclone
+          cat <<EOF > ~/.config/rclone/rclone.conf
+          [mygdrive]
+          type = drive
+          scope = drive
+          token = $RCLONE_TOKEN
+          EOF
+          
+          # 6. Upload to the specified Google Drive folder
+          rclone copy "$NEW_APP_FILE" mygdrive:{"$FOLDER_ID"} -v
+
+      # --- 2. UPLOAD COVERAGE TO GOOGLE DRIVE VIA RCLONE ---
+      - name: Upload Coverage to Google Drive
+        env:
+          FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
+          RUN_ID: ${{ github.run_id }}
+          RCLONE_TOKEN: ${{ secrets.RCLONE_GDRIVE_TOKEN }}
+        run: |
+          # Check if the file exists before proceeding
+          if [ ! -f "coverage-report.zip" ]; then
+            echo "Coverage file not found. Skipping upload."
+            exit 0
+          fi
+          
+          # 1. Get current time (getting the time again to ensure minute-level accuracy)
+          CURRENT_TIME=$(date -u +"%Y%m%d_%Hh%M")
+          NEW_COV_FILE="coverage-report_${RUN_ID}_${CURRENT_TIME}.zip"
+          
+          # 2. Save the filename to an environment variable
+          echo "COVERAGE_FILENAME=$NEW_COV_FILE" >> $GITHUB_ENV
+          
+          # 3. Rename the zip file
+          mv coverage-report.zip "$NEW_COV_FILE"
+          
+          # Note: Rclone is already configured in the previous step.
+          # 4. Upload to the specified Google Drive folder
+          rclone copy "$NEW_COV_FILE" mygdrive:{"$FOLDER_ID"} -v
+
+      # --- 3. SEND GOOGLE CHAT NOTIFICATION ---
+      - name: Send Google Chat notification
+        if: success()
+        shell: pwsh
+        env:
+          GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
+          GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
+          PR_TITLE: ${{ github.event.pull_request.title || 'Manual Trigger Testing' }}
+          PR_URL: ${{ github.event.pull_request.html_url || github.server_url }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          REPO_NAME: ${{ github.repository }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:GOOGLE_CHAT_WEBHOOK)) {
+            Write-Host "GOOGLE_CHAT_WEBHOOK is not configured. Skipping notification."
+            exit 0
+          }
+
+          $safeTitle = [System.Net.WebUtility]::HtmlEncode($env:PR_TITLE)
+          $driveUrl = "https://drive.google.com/drive/folders/$($env:GDRIVE_FOLDER_ID)"
+          
+          # Handle the case where the coverage file is missing
+          $covFileName = if ([string]::IsNullOrWhiteSpace($env:COVERAGE_FILENAME)) { "N/A (No report generated)" } else { $env:COVERAGE_FILENAME }
+
+          $payload = @{
+            cardsV2 = @(
+              @{
+                cardId = 'winformapp-ci'
+                card = @{
+                  header = @{
+                    title = 'WinFormsApp CI completed'
+                    subtitle = $env:REPO_NAME
+                  }
+                  sections = @(
+                    @{
+                      widgets = @(
+                        @{
+                          textParagraph = @{
+                            # Use the environment variable to correctly display the filename with the timestamp
+                            text = "<b>Merged PR:</b> $safeTitle<br><b>App Build:</b> $($env:APP_FILENAME)<br><b>Coverage:</b> $covFileName"
+                          }
+                        }
+                        @{
+                          buttonList = @{
+                            buttons = @(
+                              @{
+                                text = '📂 Open Google Drive'
+                                onClick = @{ openLink = @{ url = $driveUrl } }
+                              }
+                              @{
+                                text = '⚙️ Open workflow run'
+                                onClick = @{ openLink = @{ url = $env:RUN_URL } }
+                              }
+                            )
+                          }
+                        }
+                      )
+                    }
+                  )
+                }
+              }
+            )
+          } | ConvertTo-Json -Depth 20
+
+          Invoke-RestMethod -Uri $env:GOOGLE_CHAT_WEBHOOK -Method Post -ContentType 'application/json; charset=utf-8' -Body $payload
