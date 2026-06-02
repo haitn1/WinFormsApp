@@ -194,7 +194,7 @@ jobs:
           
           # Note: Rclone is already configured in the previous step.
           # 4. Upload to the specified Google Drive folder
-          rclone copy "$NEW_APP_FILE" mygdrive: -v
+          rclone copy "$NEW_COV_FILE" mygdrive: -v
 
       # --- 3. SEND GOOGLE CHAT NOTIFICATION ---
       - name: Send Google Chat notification
