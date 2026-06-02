@@ -121,8 +121,10 @@ jobs:
     timeout-minutes: 10
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-      CURRENT_TIME: $(date -u +"%Y%m%d_%Hh%M")
     steps:
+    # STEP 0: Generate a single shared timestamp for the entire job
+      - name: Set Shared Timestamp
+        run: echo "CURRENT_TIME=$(date -u +'%Y%m%d_%Hh%M')" >> $GITHUB_ENV
       # 1. Download the App Zip file from the Windows Job to the Linux machine.
       - name: Download App Artifact
         uses: actions/download-artifact@v4
@@ -145,7 +147,7 @@ jobs:
         run: |
           # 1. Get current time (UTC) in yyyyMMdd_HHmm format
           #CURRENT_TIME=$(date -u +"%Y%m%d_%Hh%M")
-          NEW_APP_FILE="WinFormsApp_${RUN_ID}_${env:CURRENT_TIME}.zip"
+          NEW_APP_FILE="WinFormsApp_${RUN_ID}_${CURRENT_TIME}.zip"
           
           # 2. Save the filename to an environment variable for Google Chat to use later
           echo "APP_FILENAME=$NEW_APP_FILE" >> $GITHUB_ENV
@@ -184,7 +186,7 @@ jobs:
           
           # 1. Get current time (getting the time again to ensure minute-level accuracy)
           #CURRENT_TIME=$(date -u +"%Y%m%d_%Hh%M")
-          NEW_COV_FILE="coverage-report_${RUN_ID}_${env:CURRENT_TIME}.zip"
+          NEW_COV_FILE="coverage-report_${RUN_ID}_${CURRENT_TIME}.zip"
           
           # 2. Save the filename to an environment variable
           echo "COVERAGE_FILENAME=$NEW_COV_FILE" >> $GITHUB_ENV
