@@ -123,28 +123,49 @@ jobs:
         with:
           name: coverage-report
 
-      # 3. Đẩy App lên Google Drive (Docker Action chạy trên Linux)
-      - name: Upload App to Google Drive
-        uses: adityak74/google-drive-upload-git-action@main
-        with:
-          credentials: ${{ secrets.GDRIVE_CREDENTIALS_DATA }}
-          filename: "WinFormsApp.zip"
-          folderId: ${{ secrets.GDRIVE_FOLDER_ID }}
-          name: "WinFormsApp_${{ github.run_id }}.zip" 
-          overwrite: "true"
+      # --- UPLOAD APP LÊN GOOGLE DRIVE BẰNG RCLONE ---
+      - name: Upload App to Shared Drive
+        env:
+          GDRIVE_CREDENTIALS_B64: ${{ secrets.GDRIVE_CREDENTIALS_DATA }}
+          FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          # 1. Giải mã secret Base64 trở lại thành file sa.json
+          echo "$GDRIVE_CREDENTIALS_B64" | base64 -d > sa.json
+          
+          # 2. Cài đặt Rclone tự động (siêu nhanh)
+          curl -s https://rclone.org/install.sh | sudo bash
+          
+          # 3. Đổi tên file zip gắn kèm Run ID để không bị trùng
+          mv WinFormsApp.zip WinFormsApp_${RUN_ID}.zip
+          
+          # 4. Tải lên Google Drive
+          export RCLONE_DRIVE_SERVICE_ACCOUNT_FILE=sa.json
+          export RCLONE_DRIVE_ROOT_FOLDER_ID=$FOLDER_ID
+          rclone copy WinFormsApp_${RUN_ID}.zip :drive: -v
 
-      # 4. Đẩy Coverage lên Google Drive
-      - name: Upload Coverage to Google Drive
-        uses: adityak74/google-drive-upload-git-action@main
-        continue-on-error: true
-        with:
-          credentials: ${{ secrets.GDRIVE_CREDENTIALS_DATA }}
-          filename: "coverage-report.zip"
-          folderId: ${{ secrets.GDRIVE_FOLDER_ID }}
-          name: "coverage-report_${{ github.run_id }}.zip" 
-          overwrite: "true"
+      # UPLOAD Coverage lên GOOGLE DRIVE BẰNG RCLONE ---
+      - name: Upload App to Shared Drive
+        env:
+          GDRIVE_CREDENTIALS_B64: ${{ secrets.GDRIVE_CREDENTIALS_DATA }}
+          FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          # 1. Giải mã secret Base64 trở lại thành file sa.json
+          echo "$GDRIVE_CREDENTIALS_B64" | base64 -d > sa.json
+          
+          # 2. Cài đặt Rclone tự động (siêu nhanh)
+          curl -s https://rclone.org/install.sh | sudo bash
+          
+          # 3. Đổi tên file zip gắn kèm Run ID để không bị trùng
+          mv coverage-report.zip coverage-report_${RUN_ID}.zip
+          
+          # 4. Tải lên Google Drive
+          export RCLONE_DRIVE_SERVICE_ACCOUNT_FILE=sa.json
+          export RCLONE_DRIVE_ROOT_FOLDER_ID=$FOLDER_ID
+          rclone copy coverage-report_${RUN_ID}.zip :drive: -v
 
-      # 5. Gửi thông báo Google Chat (PowerShell chạy tốt trên Ubuntu)
+      #  Gửi thông báo Google Chat (PowerShell chạy tốt trên Ubuntu)
       - name: Send Google Chat notification
         shell: pwsh
         env:
