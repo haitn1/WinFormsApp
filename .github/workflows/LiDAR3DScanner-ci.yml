@@ -75,7 +75,7 @@ jobs:
     
       # 5. Run coverage script
       - name: Run Coverage Report Script
-        run: .un-coverage-report.bat
+        run: ./run-coverage-report.bat
         shell: cmd
 
       # 6. Zip WinForms App
