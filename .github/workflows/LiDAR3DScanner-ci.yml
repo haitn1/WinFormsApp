@@ -76,14 +76,14 @@ jobs:
         run: |
           Compress-Archive `
           -Path ./WinFormsApp/publish/* `
-          -DestinationPath WinFormsApp_${RUN_ID}.zip
+          -DestinationPath WinFormsApp.zip
         shell: pwsh
 
       # Zip Coverage Report 
       - name: Zip Coverage Report
         run: |
           if (Test-Path -Path "UnitTests\coverage-report") {
-            Compress-Archive -Path UnitTests\coverage-report\* -DestinationPath coverage-report_${RUN_ID}.zip
+            Compress-Archive -Path UnitTests\coverage-report\* -DestinationPath coverage-report.zip
           } else {
             Write-Host "Coverage report folder not found. Skipping zip."
           }
@@ -116,14 +116,14 @@ jobs:
       - name: Download App Artifact
         uses: actions/download-artifact@v4
         with:
-          name: WinFormsApp_${RUN_ID}
+          name: WinFormsApp
 
       # 2. Tải file Coverage Zip từ Job Windows xuống (nếu có)
       - name: Download Coverage Artifact
         uses: actions/download-artifact@v4
         continue-on-error: true
         with:
-          name: coverage-report_${RUN_ID}
+          name: coverage-report
       # --- 1. UPLOAD APP LÊN GOOGLE DRIVE BẰNG RCLONE ---
       - name: Upload App to Shared Drive
         env:
@@ -146,7 +146,7 @@ jobs:
           curl -s https://rclone.org/install.sh | sudo bash
           
           # 5. Đổi tên file zip
-          mv WinFormsApp_${RUN_ID}.zip "$NEW_APP_FILE"
+          mv WinFormsApp.zip "$NEW_APP_FILE"
           
           # 6. Tải lên Google Drive
           export RCLONE_DRIVE_SERVICE_ACCOUNT_FILE=sa.json
@@ -161,7 +161,7 @@ jobs:
           RUN_ID: ${{ github.run_id }}
         run: |
           # Kiểm tra file có tồn tại không trước khi làm tiếp
-          if [ ! -f "coverage-report_${RUN_ID}.zip" ]; then
+          if [ ! -f "coverage-report.zip" ]; then
             echo "Coverage file not found. Skipping upload."
             exit 0
           fi
@@ -177,7 +177,7 @@ jobs:
           echo "$GDRIVE_CREDENTIALS_B64" | base64 -d > sa.json
           
           # 4. Đổi tên file zip
-          mv coverage-report_${RUN_ID}.zip "$NEW_COV_FILE"
+          mv coverage-report.zip "$NEW_COV_FILE"
           
           # 5. Tải lên Google Drive
           export RCLONE_DRIVE_SERVICE_ACCOUNT_FILE=sa.json
