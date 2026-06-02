@@ -127,12 +127,12 @@ jobs:
           name: coverage-report
 
       # --- 1. UPLOAD APP TO GOOGLE DRIVE VIA RCLONE ---
-      - name: Upload App to Shared Drive
+      # --- 1. UPLOAD APP TO GOOGLE DRIVE VIA RCLONE (OAUTH) ---
+      - name: Upload App to Google Drive
         env:
-          GDRIVE_CREDENTIALS_B64: ${{ secrets.GDRIVE_CREDENTIALS_DATA }}
           FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
           RUN_ID: ${{ github.run_id }}
-          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+          RCLONE_TOKEN: ${{ secrets.RCLONE_GDRIVE_TOKEN }}
         run: |
           # 1. Get current time (UTC) in yyyyMMdd_HHmm format
           CURRENT_TIME=$(date -u +"%Y%m%d_%Hh%M")
@@ -141,26 +141,27 @@ jobs:
           # 2. Save the filename to an environment variable for Google Chat to use later
           echo "APP_FILENAME=$NEW_APP_FILE" >> $GITHUB_ENV
           
-          # 3. Decode the Base64 secret
-          echo "$GDRIVE_CREDENTIALS_B64" | base64 -d > sa.json
-          
-          # 4. Install Rclone automatically
           curl -s https://rclone.org/install.sh | sudo bash
-          
-          # 5. Rename the zip file
           mv WinFormsApp.zip "$NEW_APP_FILE"
           
-          # 6. Upload to Google Drive
-          export RCLONE_DRIVE_SERVICE_ACCOUNT_FILE=sa.json
-          export RCLONE_DRIVE_ROOT_FOLDER_ID=$FOLDER_ID
-          rclone copy "$NEW_APP_FILE" :drive: -v
+          # Cấu hình Rclone bằng Token thay vì Service Account
+          mkdir -p ~/.config/rclone
+          cat <<EOF > ~/.config/rclone/rclone.conf
+          [mygdrive]
+          type = drive
+          scope = drive
+          token = $RCLONE_TOKEN
+          EOF
+          
+          # Upload lên thư mục chỉ định
+          rclone copy "$NEW_APP_FILE" mygdrive:{"$FOLDER_ID"} -v
 
       # --- 2. UPLOAD COVERAGE TO GOOGLE DRIVE VIA RCLONE ---
       - name: Upload Coverage to Shared Drive
         env:
-          GDRIVE_CREDENTIALS_B64: ${{ secrets.GDRIVE_CREDENTIALS_DATA }}
           FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
           RUN_ID: ${{ github.run_id }}
+          RCLONE_TOKEN: ${{ secrets.RCLONE_GDRIVE_TOKEN }}
         run: |
           # Check if the file exists before proceeding
           if [ ! -f "coverage-report.zip" ]; then
@@ -168,23 +169,24 @@ jobs:
             exit 0
           fi
           
-          # 1. Get current time (getting the time again to ensure minute-level accuracy)
-          CURRENT_TIME=$(date -u +"%Y%m%d_%Hh%M")
-          NEW_COV_FILE="coverage-report_${RUN_ID}_${CURRENT_TIME}.zip"
+           CURRENT_TIME=$(date -u +"%Y%m%d_%Hh%M")
+          NEW_APP_FILE="coverage-report_${RUN_ID}_${CURRENT_TIME}.zip"
+          echo "APP_FILENAME=$NEW_APP_FILE" >> $GITHUB_ENV
           
-          # 2. Save the filename to an environment variable
-          echo "COVERAGE_FILENAME=$NEW_COV_FILE" >> $GITHUB_ENV
+          curl -s https://rclone.org/install.sh | sudo bash
+          mv coverage-report.zip "$NEW_APP_FILE"
           
-          # 3. Decode the Base64 secret
-          echo "$GDRIVE_CREDENTIALS_B64" | base64 -d > sa.json
+          # Cấu hình Rclone bằng Token thay vì Service Account
+          mkdir -p ~/.config/rclone
+          cat <<EOF > ~/.config/rclone/rclone.conf
+          [mygdrive]
+          type = drive
+          scope = drive
+          token = $RCLONE_TOKEN
+          EOF
           
-          # 4. Rename the zip file
-          mv coverage-report.zip "$NEW_COV_FILE"
-          
-          # 5. Upload to Google Drive
-          export RCLONE_DRIVE_SERVICE_ACCOUNT_FILE=sa.json
-          export RCLONE_DRIVE_ROOT_FOLDER_ID=$FOLDER_ID
-          rclone copy "$NEW_COV_FILE" :drive: -v
+          # Upload lên thư mục chỉ định
+          rclone copy "$NEW_APP_FILE" mygdrive:{"$FOLDER_ID"} -v
 
       # --- 3. SEND GOOGLE CHAT NOTIFICATION ---
       - name: Send Google Chat notification
