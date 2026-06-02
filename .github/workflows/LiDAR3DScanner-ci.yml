@@ -79,12 +79,14 @@ jobs:
           -DestinationPath WinFormsApp.zip
         shell: pwsh
 
-      # Zip Coverage Report
+      # Zip Coverage Report 
       - name: Zip Coverage Report
         run: |
-          Compress-Archive `
-          -Path UnitTests\coverage-report/* `
-          -DestinationPath coverage-report.zip
+          if (Test-Path -Path "UnitTests\coverage-report") {
+            Compress-Archive -Path UnitTests\coverage-report\* -DestinationPath coverage-report.zip
+          } else {
+            Write-Host "Coverage report folder not found. Skipping zip."
+          }
         shell: pwsh
 
      # 7. Upload Artifacts
@@ -144,23 +146,28 @@ jobs:
           export RCLONE_DRIVE_ROOT_FOLDER_ID=$FOLDER_ID
           rclone copy WinFormsApp_${RUN_ID}.zip :drive: -v
 
-      # UPLOAD Coverage lên GOOGLE DRIVE BẰNG RCLONE ---
-      - name: Upload App to Shared Drive
+      # --- UPLOAD Coverage lên GOOGLE DRIVE BẰNG RCLONE ---
+      - name: Upload Coverage to Shared Drive
         env:
           GDRIVE_CREDENTIALS_B64: ${{ secrets.GDRIVE_CREDENTIALS_DATA }}
           FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
           RUN_ID: ${{ github.run_id }}
         run: |
-          # 1. Giải mã secret Base64 trở lại thành file sa.json
+          # KIỂM TRA: Nếu file không tồn tại thì in thông báo và bỏ qua an toàn
+          if [ ! -f "coverage-report.zip" ]; then
+            echo "Coverage file not found. Skipping upload."
+            exit 0
+          fi
+          
+          # 1. Giải mã secret Base64
           echo "$GDRIVE_CREDENTIALS_B64" | base64 -d > sa.json
           
-          # 2. Cài đặt Rclone tự động (siêu nhanh)
-          curl -s https://rclone.org/install.sh | sudo bash
+          # (Lưu ý: Bỏ qua lệnh cài đặt rclone ở đây vì bước App đã cài rồi)
           
-          # 3. Đổi tên file zip gắn kèm Run ID để không bị trùng
+          # 2. Đổi tên file zip gắn kèm Run ID
           mv coverage-report.zip coverage-report_${RUN_ID}.zip
           
-          # 4. Tải lên Google Drive
+          # 3. Tải lên Google Drive
           export RCLONE_DRIVE_SERVICE_ACCOUNT_FILE=sa.json
           export RCLONE_DRIVE_ROOT_FOLDER_ID=$FOLDER_ID
           rclone copy coverage-report_${RUN_ID}.zip :drive: -v
