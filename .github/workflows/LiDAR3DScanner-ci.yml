@@ -94,14 +94,14 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: WinFormsApp
-          path: WinFormsApp_${RUN_ID}.zip
+          path: WinFormsApp.zip
       
       # Upload coverage zip
       - name: Upload Coverage Report
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
-          path: coverage-report_${RUN_ID}.zip
+          path: coverage-report.zip
   # ==========================================
   # JOB 2: CHẠY TRÊN LINUX (THÊM MỚI)
   # ==========================================
