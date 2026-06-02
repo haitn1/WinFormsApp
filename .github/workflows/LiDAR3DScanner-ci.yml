@@ -55,7 +55,7 @@ jobs:
 
       # Add .NET tools to PATH
       - name: Add .NET tools to PATH
-        run: echo "$env:USERPROFILE\.dotnet	ools" >> $env:GITHUB_PATH
+        run: echo "$env:USERPROFILE\.dotnetools" >> $env:GITHUB_PATH
         shell: pwsh
 
       # 3. Restore NuGet packages
