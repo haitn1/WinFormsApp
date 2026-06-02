@@ -6,8 +6,6 @@ on:
     branches:
       - main
       - develop
-    types:
-      - closed
     paths-ignore:
       - '**/*.md'
       - '.gitignore'
@@ -22,7 +20,7 @@ concurrency:
 jobs:
   build-test:
     name: Build, Test, Package
-    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true
+    #if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true
     runs-on: windows-latest
     timeout-minutes: 30
     
@@ -55,7 +53,7 @@ jobs:
 
       # Add .NET tools to PATH
       - name: Add .NET tools to PATH
-        run: echo "$env:USERPROFILE\.dotnet	ools" >> $env:GITHUB_PATH
+        run: echo "$env:USERPROFILE\.dotnetools" >> $env:GITHUB_PATH
         shell: pwsh
 
       # 3. Restore NuGet packages
@@ -123,8 +121,10 @@ jobs:
     timeout-minutes: 10
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-      
     steps:
+    # STEP 0: Generate a single shared timestamp for the entire job
+      - name: Set Shared Timestamp
+        run: echo "CURRENT_TIME=$(date -u +'%Y%m%d_%Hh%M')" >> $GITHUB_ENV
       # 1. Download the App Zip file from the Windows Job to the Linux machine.
       - name: Download App Artifact
         uses: actions/download-artifact@v4
@@ -146,7 +146,7 @@ jobs:
           RCLONE_TOKEN: ${{ secrets.RCLONE_GDRIVE_TOKEN }}
         run: |
           # 1. Get current time (UTC) in yyyyMMdd_HHmm format
-          CURRENT_TIME=$(date -u +"%Y%m%d_%Hh%M")
+          #CURRENT_TIME=$(date -u +"%Y%m%d_%Hh%M")
           NEW_APP_FILE="WinFormsApp_${RUN_ID}_${CURRENT_TIME}.zip"
           
           # 2. Save the filename to an environment variable for Google Chat to use later
@@ -165,10 +165,11 @@ jobs:
           type = drive
           scope = drive
           token = $RCLONE_TOKEN
+          root_folder_id = $FOLDER_ID
           EOF
           
           # 6. Upload to the specified Google Drive folder
-          rclone copy "$NEW_APP_FILE" mygdrive:{"$FOLDER_ID"} -v
+          rclone copy "$NEW_APP_FILE" mygdrive: -v
 
       # --- 2. UPLOAD COVERAGE TO GOOGLE DRIVE VIA RCLONE ---
       - name: Upload Coverage to Google Drive
@@ -184,7 +185,7 @@ jobs:
           fi
           
           # 1. Get current time (getting the time again to ensure minute-level accuracy)
-          CURRENT_TIME=$(date -u +"%Y%m%d_%Hh%M")
+          #CURRENT_TIME=$(date -u +"%Y%m%d_%Hh%M")
           NEW_COV_FILE="coverage-report_${RUN_ID}_${CURRENT_TIME}.zip"
           
           # 2. Save the filename to an environment variable
@@ -195,7 +196,7 @@ jobs:
           
           # Note: Rclone is already configured in the previous step.
           # 4. Upload to the specified Google Drive folder
-          rclone copy "$NEW_COV_FILE" mygdrive:{"$FOLDER_ID"} -v
+          rclone copy "$NEW_COV_FILE" mygdrive: -v
 
       # --- 3. SEND GOOGLE CHAT NOTIFICATION ---
       - name: Send Google Chat notification
